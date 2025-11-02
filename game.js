@@ -110,7 +110,8 @@ class NiuLeGeNiuGame {
      */
     _hasSeenRules() {
         try {
-            return localStorage.getItem('niulegeniu_hasSeenRules') === 'true';
+            // 不再使用localStorage检查是否看过规则，总是返回false
+            return false;
         } catch (e) {
             console.warn('无法获取规则查看状态:', e);
             return false;
@@ -123,7 +124,8 @@ class NiuLeGeNiuGame {
      */
     _markRulesAsSeen() {
         try {
-            localStorage.setItem('niulegeniu_hasSeenRules', 'true');
+            // 保留此方法以保持兼容性，但不再实际存储状态
+            // localStorage.setItem('niulegeniu_hasSeenRules', 'true');
         } catch (e) {
             console.warn('无法保存规则查看状态:', e);
         }
@@ -429,13 +431,8 @@ class NiuLeGeNiuGame {
         // 绑定事件监听器
         this._bindEvents();
 
-        // 检查是否需要显示规则
-        if (!this._hasSeenRules()) {
-            this._showRulesModal();
-        } else {
-            // 直接开始游戏
-            this._initGame();
-        }
+        // 每次打开页面都显示规则
+        this._showRulesModal();
     }
 
     /**
