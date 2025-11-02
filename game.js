@@ -47,11 +47,12 @@ class NiuLeGeNiuGame {
             gameRules: [
                 "1. 点击卡片将其放入下方卡槽",
                 "2. 当卡槽中有3张相同图案的卡片时，它们将被自动消除",
-                "3. 每张卡片最多只能被点击2次",
+                "3. 每张卡片最多只能被点击1次",
                 "4. 消除所有卡片即可通关",
                 "5. 卡槽最多可容纳7张卡片，满了则无法继续选择",
                 "6. 每关有2次重排机会，可以重新排列顶层卡片",
-                "7. 卡住时可以使用提示功能寻找可匹配的卡片"
+                "7. 每关有2次移除机会，可以移除卡槽中的所有卡片",
+                "8. 卡住时可以使用提示功能寻找可匹配的卡片"
             ],
             // 音乐配置
             music: {
@@ -69,7 +70,8 @@ class NiuLeGeNiuGame {
             totalCards: 0,             // 总卡片数（不含障碍物）
             isProcessing: false,       // 动画处理中
             refreshCount: 2,           // 重排次数
-            highScore: this._getHighScore() // 最高分
+            personalHighScore: this._getPersonalHighScore(), // 个人最高分
+            globalHighScore: 0         // 全网最高分（将异步获取）
         };
 
         // DOM 元素引用
@@ -77,30 +79,73 @@ class NiuLeGeNiuGame {
     }
 
     /**
-     * 获取最高分记录
+     * 获取个人最高分记录
      * @private
      */
-    _getHighScore() {
+    _getPersonalHighScore() {
         try {
             const savedScore = localStorage.getItem('niulegeniu_highscore');
             return savedScore ? parseInt(savedScore, 10) : 0;
         } catch (e) {
-            console.warn('无法获取最高分记录:', e);
+            console.warn('无法获取个人最高分记录:', e);
             return 0;
+        }
+    }
+    
+    /**
+     * 获取全网最高分记录
+     * @returns {Promise<number>} 全网最高分
+     * @private
+     */
+    async _getGlobalHighScore() {
+        try {
+            const response = await fetch('global_highscore.json');
+            if (response.ok) {
+                const data = await response.json();
+                return parseInt(data.highScore || '0', 10);
+            }
+            console.warn('无法获取全网最高分记录:', response.status);
+            return 0;
+        } catch (e) {
+            console.warn('无法获取全网最高分记录:', e);
+            return 0;
+        }
+    }
+    
+    /**
+     * 更新全网最高分记录
+     * @param {number} score - 新的分数
+     * @returns {Promise<boolean>} 更新是否成功
+     * @private
+     */
+    async _updateGlobalHighScore(score) {
+        try {
+            const response = await fetch('global_highscore.json', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ highScore: score })
+            });
+            return response.ok;
+        } catch (e) {
+            console.warn('无法更新全网最高分记录:', e);
+            // 由于浏览器环境限制，POST请求可能失败，这是预期行为
+            return false;
         }
     }
 
     /**
-     * 更新最高分记录
+     * 更新个人最高分记录
      * @param {number} score - 新的分数
      * @private
      */
-    _updateHighScore(score) {
+    _updatePersonalHighScore(score) {
         try {
             localStorage.setItem('niulegeniu_highscore', score.toString());
-            this.gameState.highScore = score;
+            this.gameState.personalHighScore = score;
         } catch (e) {
-            console.warn('无法保存最高分记录:', e);
+            console.warn('无法保存个人最高分记录:', e);
         }
     }
 
@@ -411,9 +456,11 @@ class NiuLeGeNiuGame {
             remainingEl: document.getElementById('remaining'),
             levelDisplay: document.getElementById('levelDisplay'),
             highScoreEl: document.getElementById('highScore') || this._createHighScoreElement(),
+            globalHighScoreEl: document.getElementById('globalHighScore') || this._createGlobalHighScoreElement(),
             restartBtn: document.getElementById('restartBtn'),
             hintBtn: document.getElementById('hintBtn'),
             refreshBtn: document.getElementById('refreshBtn'),
+            removeBtn: document.getElementById('removeBtn') || this._createRemoveButton(),
             musicButton: musicButton,
             defeatMessage: document.getElementById('defeatMessage'),
             victoryMessage: document.getElementById('victoryMessage'),
@@ -427,6 +474,12 @@ class NiuLeGeNiuGame {
         
         // 更新最高分显示
         this._updateHighScoreDisplay();
+        
+        // 异步获取并更新全网最高分
+        this._getGlobalHighScore().then(globalScore => {
+            this.gameState.globalHighScore = globalScore;
+            this._updateGlobalHighScoreDisplay();
+        });
 
         // 绑定事件监听器
         this._bindEvents();
@@ -436,7 +489,44 @@ class NiuLeGeNiuGame {
     }
 
     /**
-     * 创建最高分显示元素
+     * 创建移除按钮
+     * @private
+     */
+    _createRemoveButton() {
+        const removeBtn = document.createElement('button');
+        removeBtn.id = 'removeBtn';
+        removeBtn.className = 'remove-btn';
+        removeBtn.textContent = '移除(2)';
+        removeBtn.style.cssText = `
+            padding: 8px 18px;
+            background-color: #4c6ef5;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        `;
+        
+        // 查找控制按钮容器并添加
+        const controls = document.querySelector('.controls');
+        if (controls) {
+            // 找到refreshBtn并在其后插入
+            const refreshBtn = document.getElementById('refreshBtn');
+            if (refreshBtn) {
+                refreshBtn.parentNode.insertBefore(removeBtn, refreshBtn.nextSibling);
+            } else {
+                controls.appendChild(removeBtn);
+            }
+        }
+        
+        return removeBtn;
+    }
+    
+    /**
+     * 创建个人最高分显示元素
      * @private
      */
     _createHighScoreElement() {
@@ -458,6 +548,32 @@ class NiuLeGeNiuGame {
         `;
         document.body.appendChild(highScoreEl);
         return highScoreEl;
+    }
+    
+    /**
+     * 创建全网最高分显示元素
+     * @private
+     */
+    _createGlobalHighScoreElement() {
+        // 方法被调用时，已经检查过元素不存在，直接创建新元素
+        const globalScoreEl = document.createElement('div');
+        globalScoreEl.id = 'globalHighScore';
+        globalScoreEl.className = 'global-high-score';
+        globalScoreEl.style.cssText = `
+            position: absolute;
+            top: 70px;
+            right: 20px;
+            background: linear-gradient(45deg, #FFD700, #FFA500);
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+        `;
+        document.body.appendChild(globalScoreEl);
+        return globalScoreEl;
     }
 
     /**
@@ -500,25 +616,47 @@ class NiuLeGeNiuGame {
     }
 
     /**
-     * 更新最高分显示
+     * 更新个人最高分显示
      * @private
      */
     _updateHighScoreDisplay() {
         if (this.elements.highScoreEl) {
-            this.elements.highScoreEl.textContent = `🏆 最高分: ${this.gameState.highScore}关`;
+            this.elements.highScoreEl.textContent = `🏆 单人最高: ${this.gameState.personalHighScore}关`;
+        }
+    }
+    
+    /**
+     * 更新全网最高分显示
+     * @private
+     */
+    _updateGlobalHighScoreDisplay() {
+        if (this.elements.globalHighScoreEl) {
+            this.elements.globalHighScoreEl.textContent = `🌏 全网最高: ${this.gameState.globalHighScore}关`;
         }
     }
 
     /**
      * 显示新纪录提示
+     * @param {boolean} isGlobalRecord - 是否是全网新纪录
      * @private
      */
-    _showNewRecordMessage() {
+    _showNewRecordMessage(isGlobalRecord = false) {
         if (this.elements.newRecordEl) {
-            const randomEncourage = this.config.newRecordEncouragements[
-                Math.floor(Math.random() * this.config.newRecordEncouragements.length)
-            ];
-            this.elements.newRecordEl.textContent = randomEncourage;
+            if (isGlobalRecord) {
+                // 全网新纪录特殊提示
+                this.elements.newRecordEl.textContent = '当前全网第一人！';
+                this.elements.newRecordEl.style.background = 'linear-gradient(45deg, #FFD700, #FFA500)';
+                this.elements.newRecordEl.style.fontSize = '28px';
+            } else {
+                // 个人新纪录提示
+                const randomEncourage = this.config.newRecordEncouragements[
+                    Math.floor(Math.random() * this.config.newRecordEncouragements.length)
+                ];
+                this.elements.newRecordEl.textContent = randomEncourage;
+                this.elements.newRecordEl.style.background = 'linear-gradient(45deg, #FFD700, #FFA500)';
+                this.elements.newRecordEl.style.fontSize = '24px';
+            }
+            
             this.elements.newRecordEl.style.display = 'block';
             
             // 3秒后隐藏
@@ -533,48 +671,45 @@ class NiuLeGeNiuGame {
      * @private
      */
     _bindEvents() {
-        // 添加全局点击事件，用于在用户交互后尝试播放音乐
-        document.addEventListener('click', () => {
-            this._tryPlayMusic();
-            // 使用函数引用而不是arguments.callee
-            document.removeEventListener('click', function handler() {
-                this._tryPlayMusic();
-            });
-        }, { once: true });
+        // 移除全局点击事件，只保留开始和喇叭按钮的音乐触发
 
         this.elements.restartBtn.addEventListener('click', () => {
-            this._tryPlayMusic();
             this.gameState.level = 1;
             this._initGame();
         });
 
         this.elements.hintBtn.addEventListener('click', () => {
-            this._tryPlayMusic();
             this._showHint();
         });
         this.elements.refreshBtn.addEventListener('click', () => {
-            this._tryPlayMusic();
             this._refreshCards();
+        });
+        
+        this.elements.removeBtn.addEventListener('click', () => {
+            this._removeAllCards();
         });
 
         // 胜利后继续挑战（进入下一关）
         this.elements.victoryBtn.addEventListener('click', () => {
-            this._tryPlayMusic();
             this.gameState.level++;
             this._initGame();
         });
 
         // 失败后重新开始
         this.elements.defeatBtn.addEventListener('click', () => {
-            this._tryPlayMusic();
             this.gameState.level = 1;
             this._initGame();
         });
         
-        // 规则弹窗开始按钮的点击事件也应该触发音乐播放
+        // 规则弹窗开始按钮的点击事件触发音乐播放
         document.addEventListener('click', (e) => {
             if (e.target && e.target.textContent === '开始游戏') {
-                this._tryPlayMusic();
+                // 确保音频播放
+                if (this.audio && this.audio.paused) {
+                    this.audio.play().catch(error => {
+                        console.warn('开始按钮播放音乐失败:', error);
+                    });
+                }
             }
         });
     }
@@ -591,9 +726,17 @@ class NiuLeGeNiuGame {
         this.gameState.totalCards = 0;
         this.gameState.isProcessing = false;
         this.gameState.refreshCount = 2;
-        // 确保高分记录已加载
-        if (!this.gameState.highScore) {
-            this.gameState.highScore = this._getHighScore();
+        this.gameState.removeCount = 2;
+        // 确保个人高分记录已加载
+        if (!this.gameState.personalHighScore) {
+            this.gameState.personalHighScore = this._getPersonalHighScore();
+        }
+        // 确保全网高分记录已加载
+        if (this.gameState.globalHighScore === 0) {
+            this._getGlobalHighScore().then(globalScore => {
+                this.gameState.globalHighScore = globalScore;
+                this._updateGlobalHighScoreDisplay();
+            });
         }
         
         // 更新UI
@@ -603,6 +746,7 @@ class NiuLeGeNiuGame {
         this.elements.cardSlot.innerHTML = '';
         this.elements.cardSlot.classList.remove('slot-full');
         this.elements.refreshBtn.textContent = `重排(${this.gameState.refreshCount})`;
+        this.elements.removeBtn.textContent = `移除(${this.gameState.removeCount})`;
         
         // 隐藏消息
         this.elements.overlay.classList.remove('show');
@@ -683,7 +827,7 @@ class NiuLeGeNiuGame {
                     isObstacle: isObstacle,
                     isLocked: layer < totalLayers - 1, // 非顶层卡片默认锁定
                     clickCount: 0, // 记录点击次数
-                    maxClicks: 2 // 最大点击次数
+                    maxClicks: 1 // 最大点击次数
                 });
             }
             
@@ -845,6 +989,10 @@ class NiuLeGeNiuGame {
                         if (!card.isObstacle && card.clickCount < card.maxClicks) {
                             // 先移除所有事件监听器
                             const newCardEl = cardEl.cloneNode(true);
+                            // 确保保留必要的dataset属性
+                            newCardEl.dataset.type = cardEl.dataset.type;
+                            newCardEl.dataset.layer = cardEl.dataset.layer;
+                            newCardEl.dataset.index = cardEl.dataset.index;
                             cardEl.parentNode.replaceChild(newCardEl, cardEl);
                             // 重新添加点击事件
                             newCardEl.addEventListener('click', () => this._selectCard(card.layer, index));
@@ -922,6 +1070,10 @@ class NiuLeGeNiuGame {
         // 更新UI
         const cardEl = document.getElementById(card.id);
         cardEl.classList.add('selected');
+        
+        // 点击后立即从主界面移除卡片
+        this.elements.gameArea.removeChild(cardEl);
+        
         this._updateCardClickCount(card);
         this._updateCardSlot();
         
@@ -961,11 +1113,13 @@ class NiuLeGeNiuGame {
         if (this.gameState.isProcessing) return;
         
         const card = this.gameState.slots[slotIndex];
-        const cardEl = document.getElementById(card.id);
-        if (cardEl) cardEl.classList.remove('selected');
         
         // 从卡槽中移除
         this.gameState.slots.splice(slotIndex, 1);
+        
+        // 重新渲染卡片到游戏区域
+        this._renderCard(card);
+        
         this._updateCardSlot();
     }
 
@@ -1014,9 +1168,6 @@ class NiuLeGeNiuGame {
         matchIndices.forEach(item => {
             const card = this.gameState.layers[item.layer][item.index];
             card.matched = true;
-            const cardEl = document.getElementById(card.id);
-            cardEl.classList.add('matched');
-            cardEl.classList.remove('selected');
         });
         
         // 从卡槽中移除
@@ -1029,16 +1180,11 @@ class NiuLeGeNiuGame {
         this.gameState.remainingCards -= 3;
         this.elements.remainingEl.textContent = this.gameState.remainingCards;
         
-        // 延迟后更新UI
+        // 更新UI
+        this._updateCardSlot();
+        
+        // 延迟后更新锁定状态和检查游戏状态
         setTimeout(() => {
-            // 移除卡片元素
-            matchIndices.forEach(item => {
-                const cardEl = document.getElementById(this.gameState.layers[item.layer][item.index].id);
-                if (cardEl) this.elements.gameArea.removeChild(cardEl);
-            });
-            
-            this._updateCardSlot();
-            
             // 检查是否有下层卡片解锁
             this._updateTopLayerLockStatus();
             
@@ -1070,22 +1216,47 @@ class NiuLeGeNiuGame {
      * 显示胜利鼓励界面
      * @private
      */
-    _showVictoryMessage() {
-        // 检查是否打破最高分记录
+    async _showVictoryMessage() {
+        // 检查是否打破记录
         let randomEncourage;
-        let isNewRecord = false;
+        let isNewPersonalRecord = false;
+        let isNewGlobalRecord = false;
         
-        if (this.gameState.level > this.gameState.highScore) {
-            // 打破记录！
-            this._updateHighScore(this.gameState.level);
+        // 确保有全局最高分数据
+        if (this.gameState.globalHighScore === 0) {
+            this.gameState.globalHighScore = await this._getGlobalHighScore();
+        }
+        
+        // 检查个人新纪录
+        if (this.gameState.level > this.gameState.personalHighScore) {
+            // 打破个人记录！
+            this._updatePersonalHighScore(this.gameState.level);
             this._updateHighScoreDisplay();
-            this._showNewRecordMessage();
-            
-            // 使用特别的鼓励语句
+            isNewPersonalRecord = true;
+        }
+        
+        // 检查全网新纪录
+        if (this.gameState.level > this.gameState.globalHighScore) {
+            // 打破全网记录！
+            await this._updateGlobalHighScore(this.gameState.level);
+            this.gameState.globalHighScore = this.gameState.level;
+            this._updateGlobalHighScoreDisplay();
+            this._showNewRecordMessage(true); // 显示全网新纪录消息
+            isNewGlobalRecord = true;
+        } else if (isNewPersonalRecord) {
+            // 只显示个人新纪录消息
+            this._showNewRecordMessage(false);
+        }
+        
+        // 根据不同情况选择鼓励语句
+        if (isNewGlobalRecord) {
+            // 全网新纪录特殊鼓励
+            randomEncourage = "太厉害了！你创造了新的全网记录！";
+        } else if (isNewPersonalRecord) {
+            // 个人新纪录鼓励
             randomEncourage = this.config.newRecordEncouragements[
                 Math.floor(Math.random() * this.config.newRecordEncouragements.length)
             ];
-            isNewRecord = true;
         } else {
             // 普通通关鼓励
             randomEncourage = this.config.encouragements[
@@ -1097,9 +1268,11 @@ class NiuLeGeNiuGame {
         this.elements.completedLevel.textContent = this.gameState.level;
         this.elements.encourageText.textContent = randomEncourage;
         
-        // 如果是新纪录，添加特殊标记
-        if (isNewRecord) {
-            this.elements.encourageText.innerHTML += ' <span style="color: gold; font-weight: bold;">(新纪录！)</span>';
+        // 根据新纪录类型添加特殊标记
+        if (isNewGlobalRecord) {
+            this.elements.encourageText.innerHTML += ' <span style="color: gold; font-weight: bold; font-size: 1.2em;">(全网第一人！)</span>';
+        } else if (isNewPersonalRecord) {
+            this.elements.encourageText.innerHTML += ' <span style="color: gold; font-weight: bold;">(个人新纪录！)</span>';
         }
         
         // 随机胜利表情
@@ -1146,16 +1319,119 @@ class NiuLeGeNiuGame {
      * @private
      */
     _hasUnlockedCards() {
-        for (const layer of this.gameState.layers) {
-            for (const card of layer) {
-                if (!card.matched && !card.isLocked && !card.isObstacle && card.clickCount < card.maxClicks) {
-                    return true;
+        // 优化检查逻辑，避免冗余计算
+        const totalLayers = this.gameState.layers.length;
+        
+        for (let layer = 0; layer < totalLayers; layer++) {
+            const currentLayer = this.gameState.layers[layer];
+            
+            for (let index = 0; index < currentLayer.length; index++) {
+                const card = currentLayer[index];
+                // 只有未匹配、非障碍物、可点击且未被覆盖的卡片才视为可点击
+                if (!card.matched && !card.isObstacle && card.clickCount < card.maxClicks) {
+                    // 顶层卡片或被上层已消除卡片覆盖的卡片解锁
+                    if (layer === totalLayers - 1 || this._isCardUncovered(layer, index)) {
+                        return true;
+                    }
                 }
             }
         }
         return false;
     }
+    
+    /**
+     * 显示临时消息（替代alert）
+     * @param {string} message - 要显示的消息
+     * @param {number} duration - 消息显示时长（毫秒）
+     * @private
+     */
+    _showTemporaryMessage(message, duration = 2000) {
+        // 检查是否已存在消息元素
+        let messageEl = document.querySelector('.game-message');
+        
+        if (!messageEl) {
+            // 创建新的消息元素
+            messageEl = document.createElement('div');
+            messageEl.className = 'game-message';
+            messageEl.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background-color: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 15px 25px;
+                border-radius: 8px;
+                z-index: 1000;
+                font-size: 16px;
+                text-align: center;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                transition: opacity 0.3s ease;
+            `;
+            document.body.appendChild(messageEl);
+        }
+        
+        // 设置消息内容并显示
+        messageEl.textContent = message;
+        messageEl.style.opacity = '1';
+        
+        // 定时隐藏消息
+        setTimeout(() => {
+            messageEl.style.opacity = '0';
+            setTimeout(() => {
+                messageEl.textContent = '';
+            }, 300);
+        }, duration);
+    }
 
+    /**
+     * 移除所有卡槽中的卡片
+     * @private
+     */
+    _removeAllCards() {
+        if (this.gameState.isProcessing || this.gameState.removeCount <= 0 || this.gameState.slots.length === 0) {
+            // 如果没有可移除的卡片，显示提示
+            if (this.gameState.slots.length === 0 && this.gameState.removeCount > 0) {
+                this._showTemporaryMessage('卡槽为空，无需移除');
+            }
+            return;
+        }
+        
+        // 添加视觉反馈
+        this.elements.cardSlot.classList.add('slot-clearing');
+        
+        this.gameState.removeCount--;
+        this.elements.removeBtn.textContent = `移除(${this.gameState.removeCount})`;
+        
+        // 禁用移除按钮以防止快速连续点击
+        this.elements.removeBtn.disabled = true;
+        
+        // 保存所有需要重新渲染的卡片
+        const cardsToRender = [...this.gameState.slots];
+        
+        // 清空卡槽
+        this.gameState.slots = [];
+        
+        // 重新渲染所有卡片到游戏区域
+        cardsToRender.forEach(card => {
+            this._renderCard(card);
+        });
+        
+        this._updateCardSlot();
+        
+        // 更新顶层卡片锁定状态
+        this._updateTopLayerLockStatus();
+        
+        // 显示操作成功提示
+        this._showTemporaryMessage('已移除所有卡槽卡片');
+        
+        // 恢复视觉状态
+        setTimeout(() => {
+            this.elements.cardSlot.classList.remove('slot-clearing');
+            this.elements.removeBtn.disabled = false;
+        }, 300);
+    }
+    
     /**
      * 重排功能
      * @private
@@ -1171,23 +1447,75 @@ class NiuLeGeNiuGame {
         const topLayer = this.gameState.layers[topLayerIndex];
         const unlockedCards = topLayer.filter(card => !card.matched && !card.isLocked && !card.isObstacle);
         
-        if (unlockedCards.length <= 1) return;
+        if (unlockedCards.length <= 1) {
+            this._showTemporaryMessage('卡片太少，无法重排');
+            return;
+        }
         
-        // 随机重新定位
-        const cardAreaWidth = this.elements.gameArea.clientWidth - 40;
-        const cardAreaHeight = this.elements.gameArea.clientHeight - 40;
-        const cardSize = 65;
-        
+        // 为卡片添加动画效果
         unlockedCards.forEach(card => {
-            card.x = 20 + Math.floor(Math.random() * (cardAreaWidth - cardSize));
-            card.y = 20 + Math.floor(Math.random() * (cardAreaHeight - cardSize));
-            
             const cardEl = document.getElementById(card.id);
             if (cardEl) {
-                cardEl.style.left = `${card.x}px`;
-                cardEl.style.top = `${card.y}px`;
+                cardEl.classList.add('refreshing');
             }
         });
+        
+        // 延迟重排以显示动画
+        setTimeout(() => {
+            // 随机重新定位，添加碰撞检测避免重叠
+            const cardAreaWidth = this.elements.gameArea.clientWidth - 40;
+            const cardAreaHeight = this.elements.gameArea.clientHeight - 40;
+            const cardSize = 65;
+            const spacing = 10;
+            
+            // 碰撞检测函数
+            const hasCollision = (newX, newY, cardIndex, positions) => {
+                const minDistance = cardSize + spacing;
+                for (let i = 0; i < cardIndex; i++) {
+                    const dx = newX - positions[i].x;
+                    const dy = newY - positions[i].y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < minDistance) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            
+            const positions = [];
+            unlockedCards.forEach((card, index) => {
+                let attempts = 0;
+                const maxAttempts = 50;
+                let newX, newY;
+                
+                do {
+                    newX = 20 + Math.floor(Math.random() * (cardAreaWidth - cardSize));
+                    newY = 20 + Math.floor(Math.random() * (cardAreaHeight - cardSize));
+                    attempts++;
+                } while (attempts < maxAttempts && hasCollision(newX, newY, index, positions));
+                
+                // 更新卡片位置
+                card.x = newX;
+                card.y = newY;
+                positions.push({ x: newX, y: newY });
+                
+                const cardEl = document.getElementById(card.id);
+                if (cardEl) {
+                    // 使用CSS过渡实现平滑移动
+                    cardEl.style.transition = 'left 0.5s ease, top 0.5s ease';
+                    cardEl.style.left = `${card.x}px`;
+                    cardEl.style.top = `${card.y}px`;
+                    
+                    // 动画完成后移除过渡效果和刷新类
+                    setTimeout(() => {
+                        cardEl.style.transition = '';
+                        cardEl.classList.remove('refreshing');
+                    }, 500);
+                }
+            });
+            
+            this._showTemporaryMessage('卡片已重排');
+        }, 300);
     }
 
     /**
@@ -1227,21 +1555,36 @@ class NiuLeGeNiuGame {
         }
         
         if (hintGroup) {
-            // 高亮提示的卡片
-            hintGroup.slice(0, 3).forEach(card => {
+            // 高亮提示的卡片 - 使用CSS类而不是直接修改style
+            const hintedCards = hintGroup.slice(0, 3);
+            
+            hintedCards.forEach(card => {
                 const cardEl = document.getElementById(card.id);
-                cardEl.style.animation = 'none';
-                setTimeout(() => {
-                    cardEl.style.animation = 'matched 0.5s ease-in-out infinite alternate';
-                }, 10);
-                
-                // 3秒后取消高亮
-                setTimeout(() => {
-                    cardEl.style.animation = '';
-                }, 3000);
+                if (cardEl) {
+                    // 移除之前可能存在的动画类
+                    cardEl.classList.remove('hint-animation');
+                    // 强制重排以确保动画重置
+                    void cardEl.offsetWidth;
+                    // 添加提示动画类
+                    cardEl.classList.add('hint-animation');
+                }
             });
+            
+            // 3秒后取消高亮
+            setTimeout(() => {
+                hintedCards.forEach(card => {
+                    const cardEl = document.getElementById(card.id);
+                    if (cardEl) {
+                        cardEl.classList.remove('hint-animation');
+                    }
+                });
+            }, 3000);
+            
+            // 显示提示信息
+            this._showTemporaryMessage('已标记可匹配的卡片');
         } else {
-            alert('没有可匹配的卡片组合，尝试重排或移除卡槽卡片');
+            // 使用DOM消息替代alert
+            this._showTemporaryMessage('没有可匹配的卡片组合，尝试重排或移除卡槽卡片');
         }
     }
 }

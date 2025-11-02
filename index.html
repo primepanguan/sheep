@@ -54,10 +54,12 @@
         
         .level-info {
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
+            align-items: center;
             margin-bottom: 10px;
             font-size: 1rem;
             color: #5c5546;
+            gap: 5px;
         }
         
         .game-area {
@@ -134,6 +136,47 @@
             100% { transform: scale(0); opacity: 0; }
         }
         
+        /* 提示动画 */
+        .card.hint-animation {
+            animation: hint-pulse 0.5s ease-in-out infinite alternate;
+            border-color: #ff6b6b;
+            box-shadow: 0 0 15px rgba(255, 107, 107, 0.7);
+        }
+        
+        @keyframes hint-pulse {
+            from {
+                transform: scale(1);
+                background-color: #f0f7ff;
+            }
+            to {
+                transform: scale(1.1);
+                background-color: #ffe0e0;
+            }
+        }
+        
+        /* 重排动画 */
+        .card.refreshing {
+            animation: refreshing 0.3s ease-in-out;
+            opacity: 0.8;
+        }
+        
+        @keyframes refreshing {
+            0% { transform: scale(1) rotate(0deg); }
+            50% { transform: scale(0.9) rotate(-5deg); }
+            100% { transform: scale(1) rotate(0deg); }
+        }
+        
+        /* 卡槽清空动画 */
+        .card-slot.slot-clearing {
+            animation: slot-clear 0.3s ease-in-out;
+            background-color: #f0e6d2;
+        }
+        
+        @keyframes slot-clear {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(0.98); }
+        }
+        
         .card-slot {
             display: flex;
             gap: 6px;
@@ -176,22 +219,15 @@
             position: relative;
         }
         
-        .slot-card::after {
-            content: '×';
-            position: absolute;
-            top: -8px;
-            right: -8px;
-            width: 20px;
-            height: 20px;
-            background-color: #c92a2a;
-            color: white;
-            border-radius: 50%;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        /* 移除叉号，改为通过点击整个卡片移除 */
+        .slot-card {
             cursor: pointer;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .slot-card:hover {
+            transform: scale(1.05);
+            box-shadow: 0 3px 8px rgba(0,0,0,0.2);
         }
         
         .controls {
@@ -355,8 +391,8 @@
     
     <div class="overlay" id="overlay"></div>
     <div class="message" id="defeatMessage">
-        <h2>😢 挑战失败</h2>
-        <p>别灰心，再试一次！你的技巧一定会越来越棒的！</p>
+        <h2>😢 失败</h2>
+        <p>请从新开始</p>
         <button id="defeatBtn">再来一局</button>
     </div>
     <div class="message victory" id="victoryMessage">
